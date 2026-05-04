@@ -40,6 +40,70 @@ describe Email::SendOnEmailService do
 
         expect(message.reload.source_id).to eq("conversation/#{conversation.uuid}/messages/#{message.id}@#{conversation.account.domain}")
       end
+
+      context 'when the channel is Google and USE_GMAIL_API is disabled' do
+        let(:email_channel) do
+          create(
+            :channel_email, :imap_email,
+            account: account,
+            provider: 'google',
+            provider_config: { access_token: 'access-token', refresh_token: 'refresh-token' }
+          )
+        end
+
+        it 'keeps SMTP delivery through ConversationReplyMailer' do
+          with_modified_env USE_GMAIL_API: 'false' do
+            service.perform
+          end
+
+          expect(delivery).to have_received(:deliver_now)
+        end
+      end
+
+      context 'when the channel is Google and USE_GMAIL_API is enabled' do
+        let(:email_channel) do
+          create(
+            :channel_email, :imap_email,
+            account: account,
+            provider: 'google',
+            provider_config: { access_token: 'access-token', refresh_token: 'refresh-token' }
+          )
+        end
+        let(:gmail) { instance_double(Gmail::Client, send_message: true) }
+
+        before do
+          allow(delivery).to receive(:message).and_return(email_message)
+          allow(Google::GmailApi).to receive(:client_for).with(channel: email_channel).and_return(gmail)
+        end
+
+        it 'sends the MIME message through Gmail API upload' do
+          with_modified_env USE_GMAIL_API: 'true' do
+            service.perform
+          end
+
+          expect(delivery).not_to have_received(:deliver_now)
+          expect(gmail).to have_received(:send_message).with(email_message)
+        end
+
+        it 'keeps source_id as the MIME message id' do
+          with_modified_env USE_GMAIL_API: 'true' do
+            service.perform
+          end
+
+          expect(message.reload.source_id).to eq(email_message.message_id)
+        end
+
+        it 'still sends through Gmail API when IMAP is disabled and an OAuth token is present' do
+          email_channel.update!(imap_enabled: false)
+
+          with_modified_env USE_GMAIL_API: 'true' do
+            service.perform
+          end
+
+          expect(delivery).not_to have_received(:deliver_now)
+          expect(gmail).to have_received(:send_message).with(email_message)
+        end
+      end
     end
 
     context 'when message is not email notifiable' do

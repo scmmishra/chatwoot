@@ -615,6 +615,14 @@ RSpec.describe ConversationReplyMailer do
 
         expect(described_class.email_reply(message).deliver_now).to be_nil
       end
+
+      it 'builds the mail for Gmail API delivery when USE_GMAIL_API is enabled' do
+        allow(class_instance).to receive(:smtp_config_set_or_development?).and_return(false)
+
+        with_modified_env USE_GMAIL_API: 'true' do
+          expect(described_class.email_reply(message)).to be_present
+        end
+      end
     end
 
     context 'when smtp disabled for email channel', :test do

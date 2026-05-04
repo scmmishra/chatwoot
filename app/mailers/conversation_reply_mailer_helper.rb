@@ -91,6 +91,10 @@ module ConversationReplyMailerHelper
     @inbox.inbox_type == 'Email' && (@channel.microsoft? || @channel.google?)
   end
 
+  def gmail_api_enabled?
+    @inbox.inbox_type == 'Email' && @channel.google? && @channel.provider_config['access_token'].present? && Google::GmailApi.enabled?
+  end
+
   def email_from
     return Email::FromBuilder.new(inbox: @inbox, message: current_message).build if @account.feature_enabled?(:reply_mailer_migration)
 
