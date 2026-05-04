@@ -1,4 +1,5 @@
 require 'net/imap'
+require 'google/apis/errors'
 
 class Inboxes::FetchImapEmailsJob < MutexApplicationJob
   queue_as :scheduled_jobs
@@ -32,7 +33,7 @@ class Inboxes::FetchImapEmailsJob < MutexApplicationJob
     inbound_emails = if channel.microsoft?
                        Imap::MicrosoftFetchEmailService.new(channel: channel, interval: interval).perform
                      elsif channel.google?
-                       Imap::GoogleFetchEmailService.new(channel: channel, interval: interval).perform
+                       google_fetch_service(channel, interval).perform
                      else
                        Imap::FetchEmailService.new(channel: channel, interval: interval).perform
                      end
@@ -42,6 +43,19 @@ class Inboxes::FetchImapEmailsJob < MutexApplicationJob
   rescue OAuth2::Error => e
     Rails.logger.error "Error for email channel - #{channel.inbox.id} : #{e.message}"
     channel.authorization_error!
+  rescue Google::Apis::Error => e
+    Rails.logger.error "Error for email channel - #{channel.inbox.id} : #{e.message}"
+    raise unless Google::GmailApi.authorization_error?(e)
+
+    channel.authorization_error!
+  end
+
+  def google_fetch_service(channel, interval)
+    if Google::GmailApi.enabled?
+      Google::GmailFetchEmailService.new(channel: channel, interval: interval)
+    else
+      Imap::GoogleFetchEmailService.new(channel: channel, interval: interval)
+    end
   end
 
   def process_mail(inbound_mail, channel)

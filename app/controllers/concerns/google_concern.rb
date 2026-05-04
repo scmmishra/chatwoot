@@ -15,6 +15,6 @@ module GoogleConcern
   private
 
   def scope
-    'email profile https://mail.google.com/'
+    Google::GmailApi.oauth_scope
   end
 end

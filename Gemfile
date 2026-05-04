@@ -180,6 +180,7 @@ gem 'omniauth-oauth2'
 gem 'audited', '~> 5.4', '>= 5.4.1'
 
 # need for google auth
+gem 'google-apis-gmail_v1'
 gem 'omniauth', '>= 2.1.2'
 gem 'omniauth-saml'
 gem 'omniauth-google-oauth2', '>= 1.1.3'

@@ -8,6 +8,14 @@ RSpec.describe Inboxes::FetchImapEmailsJob do
   let(:imap_email_channel) { create(:channel_email, :imap_email, account: account) }
   let(:channel_with_imap_disabled) { create(:channel_email, :imap_email, imap_enabled: false, account: account) }
   let(:microsoft_imap_email_channel) { create(:channel_email, :microsoft_email) }
+  let(:google_imap_email_channel) do
+    create(
+      :channel_email, :imap_email,
+      account: account,
+      provider: 'google',
+      provider_config: { access_token: 'access-token', refresh_token: 'refresh-token' }
+    )
+  end
 
   describe '#perform' do
     it 'enqueues the job' do
@@ -69,6 +77,30 @@ RSpec.describe Inboxes::FetchImapEmailsJob do
       end
     end
 
+    context 'when the channel is Google' do
+      it 'calls the Google IMAP fetch service when USE_GMAIL_API is disabled' do
+        fetch_service = instance_double(Imap::GoogleFetchEmailService, perform: [])
+        allow(Imap::GoogleFetchEmailService).to receive(:new).with(channel: google_imap_email_channel, interval: 1).and_return(fetch_service)
+
+        with_modified_env USE_GMAIL_API: 'false' do
+          described_class.perform_now(google_imap_email_channel)
+        end
+
+        expect(fetch_service).to have_received(:perform)
+      end
+
+      it 'calls the Gmail API fetch service when USE_GMAIL_API is enabled' do
+        fetch_service = instance_double(Google::GmailFetchEmailService, perform: [])
+        allow(Google::GmailFetchEmailService).to receive(:new).with(channel: google_imap_email_channel, interval: 1).and_return(fetch_service)
+
+        with_modified_env USE_GMAIL_API: 'true' do
+          described_class.perform_now(google_imap_email_channel)
+        end
+
+        expect(fetch_service).to have_received(:perform)
+      end
+    end
+
     context 'when IMAP OAuth errors out' do
       it 'marks the connection as requiring authorization' do
         error_response = double
@@ -84,6 +116,23 @@ RSpec.describe Inboxes::FetchImapEmailsJob do
           .with("AUTHORIZATION_ERROR_COUNT:channel_email:#{microsoft_imap_email_channel.id}")
 
         described_class.perform_now(microsoft_imap_email_channel)
+      end
+    end
+
+    context 'when Gmail API authorization errors out' do
+      it 'marks the connection as requiring authorization' do
+        gmail_error = Google::Apis::AuthorizationError.new('Unauthorized', status_code: 401)
+
+        allow(Google::GmailFetchEmailService).to receive(:new)
+          .with(channel: google_imap_email_channel, interval: 1)
+          .and_raise(gmail_error)
+
+        expect(Redis::Alfred).to receive(:incr)
+          .with("AUTHORIZATION_ERROR_COUNT:channel_email:#{google_imap_email_channel.id}")
+
+        with_modified_env USE_GMAIL_API: 'true' do
+          described_class.perform_now(google_imap_email_channel)
+        end
       end
     end
 
