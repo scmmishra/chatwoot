@@ -53,5 +53,15 @@ RSpec.describe Google::GmailFetchEmailService do
       expect(result).to be_empty
       expect(gmail).to have_received(:raw_message).with('gmail-message-id')
     end
+
+    it 'parses raw MIME payloads returned already decoded by the client' do
+      allow(gmail).to receive(:fetch_all_messages).and_return([gmail_message])
+      allow(gmail).to receive(:raw_message).with('gmail-message-id').and_return(raw_email)
+
+      result = described_class.new(channel: channel).perform
+
+      expect(result.length).to eq(1)
+      expect(result.first.message_id).to eq(Mail.read_from_string(raw_email).message_id)
+    end
   end
 end
